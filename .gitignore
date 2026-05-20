@@ -1,0 +1,17 @@
+# Foundry
+out/
+cache/
+broadcast/
+lib/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+
+INTERNAL.md
