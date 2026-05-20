@@ -9,7 +9,7 @@ PRIVATE_KEY ?= $(ANVIL_PRIVATE_KEY_0)
 REGISTRY ?=
 SAMPLE_DEPLOYMENT_ID ?= 0x256e3700d6f85b512d2c84d37bbb728099732d920ee341bf8f93ddbbe6c3c191
 
-.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt build test test-verbose clean anvil deploy-local register-sample-local read-sample-local inspect-tree
+.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil deploy-local register-sample-local read-sample-local inspect-tree
 
 help:
 	@echo "BlockOps local workflows"
@@ -19,6 +19,7 @@ help:
 	@echo "  make install-toolchain"
 	@echo "                      Install missing Rust and Foundry tools in WSL"
 	@echo "  make fmt            Format Solidity sources"
+	@echo "  make fmt-check      Check Solidity formatting"
 	@echo "  make build          Compile contracts"
 	@echo "  make test           Run unit tests"
 	@echo "  make test-verbose   Run unit tests with verbose traces"
@@ -71,6 +72,9 @@ check-toolchain:
 
 fmt: check-toolchain
 	forge fmt
+
+fmt-check: check-toolchain
+	forge fmt --check
 
 build: check-toolchain
 	forge build

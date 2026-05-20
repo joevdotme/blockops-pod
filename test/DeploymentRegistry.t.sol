@@ -174,7 +174,10 @@ contract DeploymentRegistryTest {
         });
     }
 
-    function assertStatus(bytes32 deploymentId, DeploymentRegistry.ReleaseStatus expected) private view {
+    function assertStatus(bytes32 deploymentId, DeploymentRegistry.ReleaseStatus expected)
+        private
+        view
+    {
         DeploymentRegistry.DeploymentProof memory proof = registry.getDeployment(deploymentId);
 
         assertEq(uint256(proof.status), uint256(expected));
@@ -244,7 +247,9 @@ contract RegistryCaller {
         registry.registerDeployment(deploymentId, input);
     }
 
-    function setSubmitter(DeploymentRegistry registry, address submitter, bool authorized) external {
+    function setSubmitter(DeploymentRegistry registry, address submitter, bool authorized)
+        external
+    {
         registry.setSubmitter(submitter, authorized);
     }
 }

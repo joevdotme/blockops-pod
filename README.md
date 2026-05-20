@@ -39,6 +39,7 @@ After the toolchain is installed:
 
 ```bash
 make setup
+make fmt-check
 make build
 make test
 ```
