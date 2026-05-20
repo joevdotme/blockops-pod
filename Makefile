@@ -2,14 +2,20 @@ SHELL := /usr/bin/env bash
 export PATH := $(HOME)/.cargo/bin:$(HOME)/.foundry/bin:$(PATH)
 
 RPC_URL ?= http://127.0.0.1:8545
+CHAIN ?= local
+CHAIN_ID ?= 31337
+FORK_BLOCK ?=
 ANVIL_ACCOUNT_0 ?= 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 ANVIL_PRIVATE_KEY_0 ?= 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 OWNER ?= $(ANVIL_ACCOUNT_0)
 PRIVATE_KEY ?= $(ANVIL_PRIVATE_KEY_0)
 REGISTRY ?=
 SAMPLE_DEPLOYMENT_ID ?= 0x256e3700d6f85b512d2c84d37bbb728099732d920ee341bf8f93ddbbe6c3c191
+MANIFEST ?= deployments/$(CHAIN)/manifest.json
+SIMULATION_REPORT ?= simulations/$(CHAIN)/simulation-report.json
+SIMULATION_LOG ?= simulations/$(CHAIN)/simulation.log
 
-.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil deploy-local register-sample-local read-sample-local inspect-tree
+.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local deploy-local register-sample-local read-sample-local inspect-tree
 
 help:
 	@echo "BlockOps local workflows"
@@ -24,6 +30,9 @@ help:
 	@echo "  make test           Run unit tests"
 	@echo "  make test-verbose   Run unit tests with verbose traces"
 	@echo "  make anvil          Start a local Anvil chain"
+	@echo "  make manifest       Generate deployment manifest"
+	@echo "  make simulate       Simulate deployment against RPC_URL/fork"
+	@echo "  make simulate-local Simulate deployment against local Anvil"
 	@echo "  make deploy-local   Deploy registry to local Anvil"
 	@echo "  make register-sample-local REGISTRY=0x..."
 	@echo "                      Register a sample deployment proof"
@@ -88,6 +97,40 @@ test-verbose: check-toolchain
 anvil: check-toolchain
 	anvil
 
+manifest: check-toolchain build
+	CHAIN=$(CHAIN) CHAIN_ID=$(CHAIN_ID) FORK_BLOCK=$(FORK_BLOCK) RPC_URL=$(RPC_URL) OWNER=$(OWNER) bash scripts/generate-manifest.sh
+
+simulate: check-toolchain manifest
+	@mkdir -p "$$(dirname "$(SIMULATION_REPORT)")"
+	@set -euo pipefail; \
+	fork_block_args=""; \
+	if [ -n "$(FORK_BLOCK)" ]; then fork_block_args="--fork-block-number $(FORK_BLOCK)"; fi; \
+	BLOCKOPS_OWNER=$(OWNER) forge script script/SimulateDeployment.s.sol:SimulateDeployment --rpc-url $(RPC_URL) $$fork_block_args --private-key $(PRIVATE_KEY) > "$(SIMULATION_LOG)"; \
+	manifest_hash="$$(cat "$$(dirname "$(MANIFEST)")/manifest.hash")"; \
+	log_hash="$$(cast keccak "$$(cat "$(SIMULATION_LOG)")")"; \
+	created_at="$$(date -u +"%Y-%m-%dT%H:%M:%SZ")"; \
+	printf '{\n' > "$(SIMULATION_REPORT)"; \
+	printf '  "schema": "blockops.simulation-report.v1",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "createdAt": "%s",\n' "$$created_at" >> "$(SIMULATION_REPORT)"; \
+	printf '  "chain": "$(CHAIN)",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "chainId": $(CHAIN_ID),\n' >> "$(SIMULATION_REPORT)"; \
+	if [ -n "$(FORK_BLOCK)" ]; then printf '  "forkBlock": $(FORK_BLOCK),\n' >> "$(SIMULATION_REPORT)"; else printf '  "forkBlock": null,\n' >> "$(SIMULATION_REPORT)"; fi; \
+	printf '  "rpcUrl": "redacted",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "owner": "$(OWNER)",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "manifest": "$(MANIFEST)",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "manifestHash": "%s",\n' "$$manifest_hash" >> "$(SIMULATION_REPORT)"; \
+	printf '  "simulationScript": "script/SimulateDeployment.s.sol:SimulateDeployment",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "simulationLog": "$(SIMULATION_LOG)",\n' >> "$(SIMULATION_REPORT)"; \
+	printf '  "simulationLogHash": "%s",\n' "$$log_hash" >> "$(SIMULATION_REPORT)"; \
+	printf '  "status": "passed"\n' >> "$(SIMULATION_REPORT)"; \
+	printf '}\n' >> "$(SIMULATION_REPORT)"; \
+	report_hash="$$(cast keccak "$$(cat "$(SIMULATION_REPORT)")")"; \
+	printf '%s\n' "$$report_hash" > "$$(dirname "$(SIMULATION_REPORT)")/simulation-report.hash"; \
+	echo "Wrote $(SIMULATION_REPORT)"; \
+	echo "Simulation report hash: $$report_hash"
+
+simulate-local: simulate
+
 deploy-local: check-toolchain
 	BLOCKOPS_OWNER=$(OWNER) forge script script/Deploy.s.sol:Deploy --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
@@ -101,7 +144,7 @@ read-sample-local: check-toolchain
 	cast call $(REGISTRY) "getDeployment(bytes32)((bytes32,bytes32,bytes32,bytes32,uint256,address,string,uint8,address,uint64,uint64))" $(SAMPLE_DEPLOYMENT_ID) --rpc-url $(RPC_URL)
 
 clean:
-	rm -rf out cache broadcast
+	rm -rf out cache broadcast deployments simulations
 
 inspect-tree:
 	@find . -maxdepth 3 -type f ! -path "./.git/*" ! -path "./out/*" ! -path "./cache/*" | sort

@@ -52,3 +52,21 @@ jobs:
 
       - name: Test
         run: make test
+
+      - name: Start local Anvil chain
+        run: |
+          anvil --host 127.0.0.1 --port 8545 > /tmp/anvil.log 2>&1 &
+          echo $! > /tmp/anvil.pid
+          sleep 2
+
+      - name: Generate manifest and simulate deployment
+        run: make simulate-local
+
+      - name: Upload simulation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockops-simulation
+          path: |
+            deployments/
+            simulations/
+          if-no-files-found: error

@@ -3,6 +3,8 @@ out/
 cache/
 broadcast/
 lib/
+deployments/
+simulations/
 
 # Local environment
 .env

@@ -42,6 +42,7 @@ make setup
 make fmt-check
 make build
 make test
+make manifest
 ```
 
 To start a local chain:
@@ -63,6 +64,21 @@ Copy the deployed registry address from the `make deploy-local` output, then reg
 ```bash
 make register-sample-local REGISTRY=0xRegistryAddress
 make read-sample-local REGISTRY=0xRegistryAddress
+```
+
+To generate release artifacts without broadcasting:
+
+```bash
+make manifest
+make simulate-local
+```
+
+`make simulate-local` expects Anvil to be running at `http://127.0.0.1:8545`. The generated manifest, simulation report, and simulation log are written under `deployments/` and `simulations/`; those directories are ignored because they are reproducible run artifacts.
+
+For a pinned fork simulation, provide a real RPC URL and optional block number:
+
+```bash
+make simulate CHAIN=base CHAIN_ID=8453 RPC_URL=https://your-rpc.example FORK_BLOCK=12345678
 ```
 
 ## Sources
