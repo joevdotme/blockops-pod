@@ -5,6 +5,7 @@ broadcast/
 lib/
 deployments/
 simulations/
+signatures/
 
 # Local environment
 .env

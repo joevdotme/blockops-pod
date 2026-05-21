@@ -14,8 +14,14 @@ SAMPLE_DEPLOYMENT_ID ?= 0x256e3700d6f85b512d2c84d37bbb728099732d920ee341bf8f93dd
 MANIFEST ?= deployments/$(CHAIN)/manifest.json
 SIMULATION_REPORT ?= simulations/$(CHAIN)/simulation-report.json
 SIMULATION_LOG ?= simulations/$(CHAIN)/simulation.log
+SIGNER_PORT ?= 8787
+SIGNER_URL ?= http://127.0.0.1:$(SIGNER_PORT)
+SIGNER_PRIVATE_KEY ?= $(ANVIL_PRIVATE_KEY_0)
+SIGNER_KEY_ID ?= local-dev-key-v1
+SIGN_REGISTRY ?= $(REGISTRY)
+SIGNATURE_REPORT ?= signatures/$(CHAIN)/release-signature.json
 
-.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local deploy-local register-sample-local read-sample-local inspect-tree
+.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local signer-local sign-release-local signer-smoke deploy-local register-sample-local read-sample-local inspect-tree
 
 help:
 	@echo "BlockOps local workflows"
@@ -33,6 +39,10 @@ help:
 	@echo "  make manifest       Generate deployment manifest"
 	@echo "  make simulate       Simulate deployment against RPC_URL/fork"
 	@echo "  make simulate-local Simulate deployment against local Anvil"
+	@echo "  make signer-local   Start local signing service"
+	@echo "  make sign-release-local REGISTRY=0x..."
+	@echo "                      Request a local release signature"
+	@echo "  make signer-smoke   Run local signer smoke test"
 	@echo "  make deploy-local   Deploy registry to local Anvil"
 	@echo "  make register-sample-local REGISTRY=0x..."
 	@echo "                      Register a sample deployment proof"
@@ -131,6 +141,16 @@ simulate: check-toolchain manifest
 
 simulate-local: simulate
 
+signer-local: check-toolchain
+	SIGNER_PORT=$(SIGNER_PORT) SIGNER_PRIVATE_KEY=$(SIGNER_PRIVATE_KEY) SIGNER_KEY_ID=$(SIGNER_KEY_ID) node signer/local-signer.js
+
+sign-release-local: check-toolchain
+	@test -n "$(SIGN_REGISTRY)" || { echo "Usage: make sign-release-local REGISTRY=0x..."; exit 1; }
+	SIGNER_URL=$(SIGNER_URL) CHAIN=$(CHAIN) CHAIN_ID=$(CHAIN_ID) REGISTRY_ADDRESS=$(SIGN_REGISTRY) SIGNATURE_REPORT=$(SIGNATURE_REPORT) node signer/request-signature.js
+
+signer-smoke: check-toolchain simulate-local
+	SIGNER_PRIVATE_KEY=$(SIGNER_PRIVATE_KEY) SIGNER_KEY_ID=$(SIGNER_KEY_ID) SIGNER_PORT=$(SIGNER_PORT) CHAIN=$(CHAIN) CHAIN_ID=$(CHAIN_ID) SIGNATURE_REPORT=$(SIGNATURE_REPORT) bash signer/smoke-test.sh
+
 deploy-local: check-toolchain
 	BLOCKOPS_OWNER=$(OWNER) forge script script/Deploy.s.sol:Deploy --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
 
@@ -144,7 +164,7 @@ read-sample-local: check-toolchain
 	cast call $(REGISTRY) "getDeployment(bytes32)((bytes32,bytes32,bytes32,bytes32,uint256,address,string,uint8,address,uint64,uint64))" $(SAMPLE_DEPLOYMENT_ID) --rpc-url $(RPC_URL)
 
 clean:
-	rm -rf out cache broadcast deployments simulations
+	rm -rf out cache broadcast deployments simulations signatures
 
 inspect-tree:
 	@find . -maxdepth 3 -type f ! -path "./.git/*" ! -path "./out/*" ! -path "./cache/*" | sort

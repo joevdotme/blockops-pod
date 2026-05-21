@@ -43,6 +43,7 @@ make fmt-check
 make build
 make test
 make manifest
+make signer-smoke
 ```
 
 To start a local chain:
@@ -80,6 +81,20 @@ For a pinned fork simulation, provide a real RPC URL and optional block number:
 ```bash
 make simulate CHAIN=base CHAIN_ID=8453 RPC_URL=https://your-rpc.example FORK_BLOCK=12345678
 ```
+
+To run the local development signer:
+
+```bash
+make signer-local
+```
+
+Then request a release signature from a second terminal:
+
+```bash
+make sign-release-local REGISTRY=0xRegistryAddress
+```
+
+The local signer validates a release-signing request and returns an EIP-712 signature over the deployment ID, manifest hash, simulation report hash, and nonce. It uses the Anvil account `0` private key by default and is for development only.
 
 ## Sources
 - [Complete Guide: Installing Foundry on Windows with WSL](https://palmartin.medium.com/complete-guide-installing-foundry-on-windows-with-wsl-9dcfe35f2bc9)
