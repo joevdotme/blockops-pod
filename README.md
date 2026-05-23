@@ -42,6 +42,7 @@ make setup
 make fmt-check
 make build
 make test
+make signer-check
 make manifest
 make signer-smoke
 ```
@@ -95,6 +96,24 @@ make sign-release-local REGISTRY=0xRegistryAddress
 ```
 
 The local signer validates a release-signing request and returns an EIP-712 signature over the deployment ID, manifest hash, simulation report hash, and nonce. It uses the Anvil account `0` private key by default and is for development only.
+
+Production signing backends are represented as fail-closed interfaces for Vault Transit and AWS KMS:
+
+```bash
+make signer-prod-config-check SIGNER_BACKEND=vault-transit
+make signer-prod-config-check SIGNER_BACKEND=aws-kms
+make signing-provisioning-check TF_SIGNING_DIR=infra/signing/aws-kms
+```
+
+See `signer/README.md` for the required environment variables and production completion notes. See `infra/signing/README.md` for Terraform skeletons that provision the signing boundary.
+
+KMS provisioning is also available as a protected manual GitHub Action:
+
+```text
+Actions -> Provision Signing -> Run workflow
+```
+
+Set `apply=false` for a check/plan run and `apply=true` to create the AWS KMS signer when the configured alias is missing.
 
 ## Sources
 - [Complete Guide: Installing Foundry on Windows with WSL](https://palmartin.medium.com/complete-guide-installing-foundry-on-windows-with-wsl-9dcfe35f2bc9)

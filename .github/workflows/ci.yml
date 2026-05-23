@@ -53,6 +53,9 @@ jobs:
       - name: Test
         run: make test
 
+      - name: Check signer service
+        run: make signer-check
+
       - name: Start local Anvil chain
         run: |
           anvil --host 127.0.0.1 --port 8545 > /tmp/anvil.log 2>&1 &

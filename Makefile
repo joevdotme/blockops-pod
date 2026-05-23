@@ -18,10 +18,12 @@ SIGNER_PORT ?= 8787
 SIGNER_URL ?= http://127.0.0.1:$(SIGNER_PORT)
 SIGNER_PRIVATE_KEY ?= $(ANVIL_PRIVATE_KEY_0)
 SIGNER_KEY_ID ?= local-dev-key-v1
+SIGNER_BACKEND ?= local-dev
 SIGN_REGISTRY ?= $(REGISTRY)
 SIGNATURE_REPORT ?= signatures/$(CHAIN)/release-signature.json
+TF_SIGNING_DIR ?= infra/signing/aws-kms
 
-.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local signer-local sign-release-local signer-smoke deploy-local register-sample-local read-sample-local inspect-tree
+.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local signer-check signer-local signer-service signer-prod-config-check signing-provisioning-check sign-release-local signer-smoke deploy-local register-sample-local read-sample-local inspect-tree
 
 help:
 	@echo "BlockOps local workflows"
@@ -39,7 +41,14 @@ help:
 	@echo "  make manifest       Generate deployment manifest"
 	@echo "  make simulate       Simulate deployment against RPC_URL/fork"
 	@echo "  make simulate-local Simulate deployment against local Anvil"
+	@echo "  make signer-check   Check signer JavaScript syntax"
 	@echo "  make signer-local   Start local signing service"
+	@echo "  make signer-service SIGNER_BACKEND=..."
+	@echo "                      Start configured signing service"
+	@echo "  make signer-prod-config-check SIGNER_BACKEND=vault-transit|aws-kms"
+	@echo "                      Validate production signer configuration"
+	@echo "  make signing-provisioning-check TF_SIGNING_DIR=infra/signing/aws-kms"
+	@echo "                      Validate Terraform formatting when terraform is installed"
 	@echo "  make sign-release-local REGISTRY=0x..."
 	@echo "                      Request a local release signature"
 	@echo "  make signer-smoke   Run local signer smoke test"
@@ -141,8 +150,25 @@ simulate: check-toolchain manifest
 
 simulate-local: simulate
 
+signer-check:
+	@find signer -name "*.js" -print0 | xargs -0 -n1 node --check
+
 signer-local: check-toolchain
 	SIGNER_PORT=$(SIGNER_PORT) SIGNER_PRIVATE_KEY=$(SIGNER_PRIVATE_KEY) SIGNER_KEY_ID=$(SIGNER_KEY_ID) node signer/local-signer.js
+
+signer-service:
+	SIGNER_BACKEND=$(SIGNER_BACKEND) SIGNER_PORT=$(SIGNER_PORT) node signer/service.js
+
+signer-prod-config-check:
+	@test "$(SIGNER_BACKEND)" != "local-dev" || { echo "Use SIGNER_BACKEND=vault-transit or SIGNER_BACKEND=aws-kms"; exit 1; }
+	SIGNER_BACKEND=$(SIGNER_BACKEND) node -e 'const { createBackend } = require("./signer/lib/backends"); const backend = createBackend(process.env); console.log(JSON.stringify({ backend: backend.name, keyId: backend.keyId, signerAddress: backend.signerAddress }, null, 2));'
+
+signing-provisioning-check:
+	@if ! command -v terraform >/dev/null; then \
+		echo "terraform not installed; skipping provisioning format check"; \
+	else \
+		terraform -chdir=$(TF_SIGNING_DIR) fmt -check; \
+	fi
 
 sign-release-local: check-toolchain
 	@test -n "$(SIGN_REGISTRY)" || { echo "Usage: make sign-release-local REGISTRY=0x..."; exit 1; }

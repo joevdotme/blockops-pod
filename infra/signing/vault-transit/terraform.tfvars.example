@@ -1,0 +1,6 @@
+vault_addr        = "https://vault.example.com"
+github_repository = "joevdotme/blockops-pod"
+github_ref        = "refs/heads/main"
+transit_mount     = "transit"
+transit_key_name  = "blockops-release-signer"
+transit_key_type  = "ecdsa-p256"

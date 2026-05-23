@@ -1,0 +1,5 @@
+aws_region               = "us-east-1"
+github_repository        = "joevdotme/blockops-pod"
+github_ref               = "refs/heads/main"
+github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+kms_alias                = "blockops-release-signer"

@@ -1,0 +1,146 @@
+name: Provision Signing
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Signing backend to provision.
+        type: choice
+        required: true
+        default: aws-kms
+        options:
+          - aws-kms
+      apply:
+        description: Apply changes when the KMS alias is missing.
+        type: boolean
+        required: true
+        default: false
+      aws_region:
+        description: AWS region for the signing key.
+        type: string
+        required: true
+        default: us-east-1
+      kms_alias:
+        description: KMS alias without the alias/ prefix.
+        type: string
+        required: true
+        default: blockops-release-signer
+      allowed_ref:
+        description: Git ref allowed to use the provisioned release signer role.
+        type: string
+        required: true
+        default: refs/heads/main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: provision-signing-${{ github.event.inputs.backend }}-${{ github.event.inputs.kms_alias }}
+  cancel-in-progress: false
+
+jobs:
+  aws-kms:
+    name: AWS KMS
+    if: github.event.inputs.backend == 'aws-kms'
+    runs-on: ubuntu-latest
+    environment: signing-production
+
+    env:
+      AWS_REGION: ${{ github.event.inputs.aws_region }}
+      KMS_ALIAS: ${{ github.event.inputs.kms_alias }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_VAR_aws_region: ${{ github.event.inputs.aws_region }}
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_github_ref: ${{ github.event.inputs.allowed_ref }}
+      TF_VAR_kms_alias: ${{ github.event.inputs.kms_alias }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate bootstrap role
+        env:
+          AWS_PROVISION_ROLE_ARN: ${{ vars.AWS_PROVISION_ROLE_ARN || secrets.AWS_PROVISION_ROLE_ARN }}
+        run: |
+          test -n "${AWS_PROVISION_ROLE_ARN}" || {
+            echo "Set AWS_PROVISION_ROLE_ARN as a GitHub environment variable or secret."
+            exit 1
+          }
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ github.event.inputs.aws_region }}
+          role-to-assume: ${{ vars.AWS_PROVISION_ROLE_ARN || secrets.AWS_PROVISION_ROLE_ARN }}
+          role-session-name: blockops-signing-provision
+
+      - name: Resolve AWS account
+        id: aws
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          echo "account-id=${account_id}" >> "${GITHUB_OUTPUT}"
+          echo "TF_VAR_github_oidc_provider_arn=arn:aws:iam::${account_id}:oidc-provider/token.actions.githubusercontent.com" >> "${GITHUB_ENV}"
+
+      - name: Check existing KMS alias
+        id: kms
+        run: |
+          if aws kms describe-key --key-id "alias/${KMS_ALIAS}" >/tmp/blockops-kms-key.json 2>/tmp/blockops-kms-error.log; then
+            key_arn="$(aws kms describe-key --key-id "alias/${KMS_ALIAS}" --query KeyMetadata.Arn --output text)"
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            echo "key-arn=${key_arn}" >> "${GITHUB_OUTPUT}"
+            echo "KMS alias alias/${KMS_ALIAS} already exists: ${key_arn}"
+          else
+            echo "exists=false" >> "${GITHUB_OUTPUT}"
+            echo "KMS alias alias/${KMS_ALIAS} was not found."
+          fi
+
+      - name: Setup Terraform
+        if: steps.kms.outputs.exists == 'false'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform init
+        if: steps.kms.outputs.exists == 'false'
+        working-directory: infra/signing/aws-kms
+        run: terraform init
+
+      - name: Terraform format
+        if: steps.kms.outputs.exists == 'false'
+        working-directory: infra/signing/aws-kms
+        run: terraform fmt -check
+
+      - name: Terraform validate
+        if: steps.kms.outputs.exists == 'false'
+        working-directory: infra/signing/aws-kms
+        run: terraform validate
+
+      - name: Terraform plan
+        if: steps.kms.outputs.exists == 'false'
+        working-directory: infra/signing/aws-kms
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply
+        if: steps.kms.outputs.exists == 'false' && github.event.inputs.apply == 'true'
+        working-directory: infra/signing/aws-kms
+        run: terraform apply -auto-approve tfplan
+
+      - name: Apply skipped
+        if: steps.kms.outputs.exists == 'false' && github.event.inputs.apply != 'true'
+        run: |
+          echo "KMS alias is missing, but apply=false. Re-run with apply=true to provision it."
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Signing Provisioning"
+            echo ""
+            echo "- Backend: \`${{ github.event.inputs.backend }}\`"
+            echo "- Region: \`${AWS_REGION}\`"
+            echo "- KMS alias: \`alias/${KMS_ALIAS}\`"
+            echo "- Existing key found: \`${{ steps.kms.outputs.exists }}\`"
+            echo "- Apply requested: \`${{ github.event.inputs.apply }}\`"
+            echo "- Allowed signer ref: \`${{ github.event.inputs.allowed_ref }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
