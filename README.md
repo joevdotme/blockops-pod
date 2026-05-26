@@ -10,6 +10,7 @@ Some JD asked for blockchain experience. So here I am boilerplating to show off 
 # Prerequisites
 - Rust
     - Foundry
+- Terraform
 
 ## Current Scope
 
@@ -102,6 +103,7 @@ Production signing backends are represented as fail-closed interfaces for Vault 
 ```bash
 make signer-prod-config-check SIGNER_BACKEND=vault-transit
 make signer-prod-config-check SIGNER_BACKEND=aws-kms
+make github-provision-plan
 make signing-provisioning-check TF_SIGNING_DIR=infra/signing/aws-kms
 ```
 
@@ -114,6 +116,15 @@ Actions -> Provision Signing -> Run workflow
 ```
 
 Set `apply=false` for a check/plan run and `apply=true` to create the AWS KMS signer when the configured alias is missing.
+
+Before running that workflow, bootstrap the AWS role GitHub will assume:
+
+```bash
+make github-provision-plan
+make github-provision-apply
+```
+
+Add the `aws_provision_role_arn` Terraform output to the GitHub `signing-production` environment as `AWS_PROVISION_ROLE_ARN`.
 
 ## Sources
 - [Complete Guide: Installing Foundry on Windows with WSL](https://palmartin.medium.com/complete-guide-installing-foundry-on-windows-with-wsl-9dcfe35f2bc9)

@@ -6,6 +6,7 @@ The goal is to show how BlockOps would provision signing boundaries without givi
 
 ## Backends
 
+- `github-provision-role/` bootstraps the AWS role that the protected GitHub workflow assumes to provision signing infrastructure.
 - `aws-kms/` provisions an AWS KMS secp256k1 signing key plus an IAM role intended for GitHub Actions OIDC.
 - `vault-transit/` provisions Vault Transit policy/JWT access and a Transit key placeholder.
 
@@ -28,15 +29,18 @@ AWS KMS supports `ECC_SECG_P256K1` keys for signing, so the AWS skeleton is the 
 These modules are intentionally not part of PR CI. Provisioning should happen from an operator workstation or a protected GitHub Actions environment with appropriate credentials.
 
 ```bash
-cd infra/signing/aws-kms
-terraform init
-terraform plan
+make github-provision-plan
+make github-provision-apply
+```
+
+The GitHub provisioning role is the bootstrap step. After it exists, add its `aws_provision_role_arn` output to the protected GitHub Environment `signing-production` as `AWS_PROVISION_ROLE_ARN`.
+
+```bash
+make signing-provisioning-plan TF_SIGNING_DIR=infra/signing/aws-kms
 ```
 
 ```bash
-cd infra/signing/vault-transit
-terraform init
-terraform plan
+make signing-provisioning-plan TF_SIGNING_DIR=infra/signing/vault-transit
 ```
 
 Do not commit Terraform state, plans, tokens, or real account IDs.
@@ -60,7 +64,9 @@ Required environment variable or secret:
 
 - `AWS_PROVISION_ROLE_ARN` - an already-bootstrapped AWS role that GitHub Actions can assume with OIDC.
 
-That bootstrap role needs enough permission to create/read the KMS and IAM resources in `infra/signing/aws-kms`.
+Create that bootstrap role with `make github-provision-apply`, then copy the `aws_provision_role_arn` output into the protected GitHub Environment named `signing-production`.
+
+That bootstrap role has permission to create/read the KMS and IAM resources in `infra/signing/aws-kms`.
 
 Suggested workflow usage:
 

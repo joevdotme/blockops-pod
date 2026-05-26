@@ -1,6 +1,11 @@
 SHELL := /usr/bin/env bash
 export PATH := $(HOME)/.cargo/bin:$(HOME)/.foundry/bin:$(PATH)
 
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 RPC_URL ?= http://127.0.0.1:8545
 CHAIN ?= local
 CHAIN_ID ?= 31337
@@ -17,13 +22,15 @@ SIMULATION_LOG ?= simulations/$(CHAIN)/simulation.log
 SIGNER_PORT ?= 8787
 SIGNER_URL ?= http://127.0.0.1:$(SIGNER_PORT)
 SIGNER_PRIVATE_KEY ?= $(ANVIL_PRIVATE_KEY_0)
+SMOKE_SIGNER_PRIVATE_KEY ?= $(ANVIL_PRIVATE_KEY_0)
 SIGNER_KEY_ID ?= local-dev-key-v1
 SIGNER_BACKEND ?= local-dev
 SIGN_REGISTRY ?= $(REGISTRY)
 SIGNATURE_REPORT ?= signatures/$(CHAIN)/release-signature.json
 TF_SIGNING_DIR ?= infra/signing/aws-kms
+GITHUB_PROVISION_DIR ?= infra/signing/github-provision-role
 
-.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local signer-check signer-local signer-service signer-prod-config-check signing-provisioning-check sign-release-local signer-smoke deploy-local register-sample-local read-sample-local inspect-tree
+.PHONY: help setup install-toolchain install-apt-deps check-toolchain fmt fmt-check build test test-verbose clean anvil manifest simulate simulate-local signer-check signer-local signer-service signer-prod-config-check signing-provisioning-check signing-provisioning-init signing-provisioning-plan signing-provisioning-apply github-provision-init github-provision-plan github-provision-apply sign-release-local signer-smoke deploy-local register-sample-local read-sample-local inspect-tree
 
 help:
 	@echo "BlockOps local workflows"
@@ -47,8 +54,18 @@ help:
 	@echo "                      Start configured signing service"
 	@echo "  make signer-prod-config-check SIGNER_BACKEND=vault-transit|aws-kms"
 	@echo "                      Validate production signer configuration"
-	@echo "  make signing-provisioning-check TF_SIGNING_DIR=infra/signing/aws-kms"
+	@echo "  make signing-provisioning-check TF_SIGNING_DIR=infra/signing/github-provision-role"
 	@echo "                      Validate Terraform formatting when terraform is installed"
+	@echo "  make signing-provisioning-init TF_SIGNING_DIR=..."
+	@echo "                      Initialize a signing Terraform module"
+	@echo "  make signing-provisioning-plan TF_SIGNING_DIR=..."
+	@echo "                      Plan a signing Terraform module"
+	@echo "  make signing-provisioning-apply TF_SIGNING_DIR=..."
+	@echo "                      Apply a signing Terraform module"
+	@echo "  make github-provision-plan"
+	@echo "                      Plan the GitHub AWS provisioning role"
+	@echo "  make github-provision-apply"
+	@echo "                      Apply the GitHub AWS provisioning role"
 	@echo "  make sign-release-local REGISTRY=0x..."
 	@echo "                      Request a local release signature"
 	@echo "  make signer-smoke   Run local signer smoke test"
@@ -165,17 +182,41 @@ signer-prod-config-check:
 
 signing-provisioning-check:
 	@if ! command -v terraform >/dev/null; then \
-		echo "terraform not installed; skipping provisioning format check"; \
-	else \
-		terraform -chdir=$(TF_SIGNING_DIR) fmt -check; \
+		echo "terraform not installed. Install Terraform, then rerun this target."; \
+		exit 1; \
 	fi
+	terraform -chdir=$(TF_SIGNING_DIR) fmt -check
+
+signing-provisioning-init:
+	@if ! command -v terraform >/dev/null; then \
+		echo "terraform not installed. Install Terraform, then rerun this target."; \
+		exit 1; \
+	fi
+	AWS_EC2_METADATA_DISABLED=true terraform -chdir=$(TF_SIGNING_DIR) init
+
+signing-provisioning-plan: signing-provisioning-check
+	AWS_EC2_METADATA_DISABLED=true terraform -chdir=$(TF_SIGNING_DIR) init
+	AWS_EC2_METADATA_DISABLED=true terraform -chdir=$(TF_SIGNING_DIR) plan
+
+signing-provisioning-apply: signing-provisioning-check
+	AWS_EC2_METADATA_DISABLED=true terraform -chdir=$(TF_SIGNING_DIR) init
+	AWS_EC2_METADATA_DISABLED=true terraform -chdir=$(TF_SIGNING_DIR) apply
+
+github-provision-init:
+	$(MAKE) signing-provisioning-init TF_SIGNING_DIR=$(GITHUB_PROVISION_DIR)
+
+github-provision-plan:
+	$(MAKE) signing-provisioning-plan TF_SIGNING_DIR=$(GITHUB_PROVISION_DIR)
+
+github-provision-apply:
+	$(MAKE) signing-provisioning-apply TF_SIGNING_DIR=$(GITHUB_PROVISION_DIR)
 
 sign-release-local: check-toolchain
 	@test -n "$(SIGN_REGISTRY)" || { echo "Usage: make sign-release-local REGISTRY=0x..."; exit 1; }
 	SIGNER_URL=$(SIGNER_URL) CHAIN=$(CHAIN) CHAIN_ID=$(CHAIN_ID) REGISTRY_ADDRESS=$(SIGN_REGISTRY) SIGNATURE_REPORT=$(SIGNATURE_REPORT) node signer/request-signature.js
 
 signer-smoke: check-toolchain simulate-local
-	SIGNER_PRIVATE_KEY=$(SIGNER_PRIVATE_KEY) SIGNER_KEY_ID=$(SIGNER_KEY_ID) SIGNER_PORT=$(SIGNER_PORT) CHAIN=$(CHAIN) CHAIN_ID=$(CHAIN_ID) SIGNATURE_REPORT=$(SIGNATURE_REPORT) bash signer/smoke-test.sh
+	SIGNER_PRIVATE_KEY=$(SMOKE_SIGNER_PRIVATE_KEY) SIGNER_KEY_ID=$(SIGNER_KEY_ID) SIGNER_PORT=$(SIGNER_PORT) CHAIN=$(CHAIN) CHAIN_ID=$(CHAIN_ID) SIGNATURE_REPORT=$(SIGNATURE_REPORT) bash signer/smoke-test.sh
 
 deploy-local: check-toolchain
 	BLOCKOPS_OWNER=$(OWNER) forge script script/Deploy.s.sol:Deploy --rpc-url $(RPC_URL) --private-key $(PRIVATE_KEY) --broadcast
